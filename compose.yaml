@@ -1,0 +1,6 @@
+services:
+  accouding:
+    image: accouding
+    build:
+      context: .
+      dockerfile: ./Dockerfile

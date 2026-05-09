@@ -1,0 +1,440 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // India / GST Compliance
+  gstin              String?  // e.g. "27AAPFU0939F1ZV"
+  state              String?  // Indian state name e.g. "Maharashtra"
+  stateCode          String?  // 2-digit GST state code e.g. "27"
+  panNumber          String?  // PAN linked to GSTIN
+  businessType       String   @default("TRADING") // MANUFACTURING | TRADING | SERVICE
+  financialYearStart String   @default("APRIL")   // APRIL (Indian FY) | JANUARY
+
+  // Contact info
+  address            String?
+  phone              String?
+  email              String?
+  currency           String   @default("INR")
+  industry           String?
+  taxId              String?  // Generic VAT/tax ID for non-India setups
+
+  accounts        Account[]
+  accountGroups   AccountGroup[]
+  contacts        Contact[]
+  transactions    Transaction[]
+  journalEntries  JournalEntry[]
+  serviceRequests ServiceRequest[]
+  users           User[]
+  auditLogs       AuditLog[]
+  gstRates        GstRate[]
+  invoices        Invoice[]
+  invoiceItems    InvoiceItem[]
+  bills           Bill[]
+  billItems       BillItem[]
+  products        Product[]
+  
+  stockLedgers      StockLedger[]
+  productionOrders  ProductionOrder[]
+  billsOfMaterial   BillOfMaterial[]
+}
+
+model User {
+  id            String    @id @default(uuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String? // Hashed password for Credentials
+  role          String    @default("USER") // ADMIN, USER
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  accounts AuthAccount[]
+  sessions Session[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuthAccount {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model ServiceRequest {
+  id             String       @id @default(uuid())
+  type           String // YEAR_END, DATA_IMPORT, BUG_FIX
+  status         String       @default("PENDING") // PENDING, PAID, COMPLETED
+  feeAmount      Float
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Account {
+  id             String        @id @default(uuid())
+  name           String
+  accountCode    String        @unique
+  type           String // ASSET, LIABILITY, EQUITY, INCOME, EXPENSE
+  balance        Float         @default(0.0)
+  openingBalance Float         @default(0.0)
+  isActive       Boolean       @default(true)
+  description    String?
+  groupId        String?
+  group          AccountGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  journalEntries JournalEntry[]
+}
+
+model AccountGroup {
+  id            String         @id @default(uuid())
+  name          String
+  type          String // ASSET, LIABILITY, EQUITY, INCOME, EXPENSE 
+  parentGroupId String?
+  parentGroup   AccountGroup?  @relation("GroupHierarchy", fields: [parentGroupId], references: [id], onDelete: SetNull)
+  subGroups     AccountGroup[] @relation("GroupHierarchy")
+  accounts      Account[]
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Contact {
+  id          String  @id @default(uuid())
+  type        String  // CUSTOMER, SUPPLIER
+  name        String
+  gstin       String?
+  state       String? // Indian state for inter/intra-state GST determination
+  stateCode   String? // 2-digit state code from GSTIN
+  address     String?
+  phone       String?
+  email       String?
+  panNumber   String?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices  Invoice[] @relation("CustomerInvoices")
+  bills     Bill[]    @relation("SupplierBills")
+}
+
+model Transaction {
+  id                  String         @id @default(uuid())
+  reference           String         @default("")
+  description         String
+  date                DateTime
+  status              String         @default("POSTED") // POSTED | CANCELLED | REVERSED
+  isArchived          Boolean        @default(false)
+  entries             JournalEntry[]
+
+  // MCA Audit Trail mandate — immutability fields
+  createdByUserId     String?
+  cancelledByUserId   String?
+  cancelledAt         DateTime?
+  cancellationReason  String?
+  reversalOfId        String?        // Points to original transaction if this is a reversal
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model JournalEntry {
+  id            String      @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  accountId     String
+  account       Account     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  type          String      // DEBIT or CREDIT
+  amount        Float
+  memo          String?     // Narration for this specific line
+  isArchived    Boolean     @default(false)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── MCA Audit Trail (Ministry of Corporate Affairs mandate) ───────────────────
+// Every create/update on financial records is timestamped and user-attributed.
+// Records are NEVER deleted — only new log entries are appended.
+model AuditLog {
+  id           String   @id @default(uuid())
+  entityType   String   // TRANSACTION | JOURNAL_ENTRY | ACCOUNT | INVOICE | CONTACT
+  entityId     String
+  action       String   // CREATED | UPDATED | CANCELLED | REVERSED | POSTED
+  performedBy  String   // userId
+  performedAt  DateTime @default(now())
+  beforeState  String?  // JSON snapshot before the change
+  afterState   String?  // JSON snapshot after the change
+  ipAddress    String?
+  userAgent    String?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ── India GST Rate Table (HSN / SAC Codes) ────────────────────────────────────
+// HSN = Harmonized System of Nomenclature (goods)
+// SAC = Services Accounting Code (services)
+// Default rates are seeded during org onboarding based on businessType.
+model GstRate {
+  id          String   @id @default(uuid())
+  code        String   // HSN or SAC code e.g. "8471" (laptops), "998314" (IT services)
+  description String
+  gstRate     Float    // Total GST % (e.g. 18.0)
+  cgstRate    Float    // Half of gstRate for intra-state (e.g. 9.0)
+  sgstRate    Float    // Half of gstRate for intra-state (e.g. 9.0)
+  igstRate    Float    // Full rate for inter-state (e.g. 18.0)
+  codeType    String   @default("HSN") // HSN | SAC
+  isActive    Boolean  @default(true)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id             String       @id @default(uuid())
+  name           String
+  description    String?
+  type           String       @default("FINISHED_GOOD") // RAW_MATERIAL, FINISHED_GOOD
+  category       String?
+  unit           String?      @default("pcs")
+  sku            String?
+  purchasePrice  Float        @default(0.0)
+  salePrice      Float        @default(0.0)
+  stockQuantity  Float        @default(0.0)
+  minStockLevel  Float        @default(0.0)
+  isActive       Boolean      @default(true)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  invoiceItems   InvoiceItem[]
+  billItems      BillItem[]
+
+  stockLedgers   StockLedger[]
+  
+  productionsAsFG ProductionOrder[]    @relation("ProducedItem")
+  productionsAsRM ProductionMaterial[] @relation("ConsumedMaterial")
+  
+  bom             BillOfMaterial?      @relation("BOMProduct")
+  bomItems        BomItem[]            @relation("BOMMaterial")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StockLedger {
+  id             String       @id @default(uuid())
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type           String       // PURCHASE, SALE, PRODUCTION_IN, PRODUCTION_OUT, RETURN
+  quantity       Float        // Positive for IN, Negative for OUT
+  referenceId    String?      // ID of Invoice, Bill, or ProductionOrder
+  description    String?
+  date           DateTime     @default(now())
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model ProductionOrder {
+  id             String       @id @default(uuid())
+  orderNumber    String       @unique
+  date           DateTime     @default(now())
+  
+  productId      String
+  product        Product      @relation("ProducedItem", fields: [productId], references: [id], onDelete: Restrict)
+  quantityYield  Float
+  
+  status         String       @default("COMPLETED")
+  notes          String?
+  
+  materials      ProductionMaterial[]
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProductionMaterial {
+  id                String          @id @default(uuid())
+  productionOrderId String
+  productionOrder   ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  
+  productId         String          
+  product           Product         @relation("ConsumedMaterial", fields: [productId], references: [id], onDelete: Restrict)
+  quantityConsumed  Float
+}
+
+model BillOfMaterial {
+  id             String       @id @default(uuid())
+  productId      String       @unique
+  product        Product      @relation("BOMProduct", fields: [productId], references: [id], onDelete: Cascade)
+  
+  items          BomItem[]
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model BomItem {
+  id               String         @id @default(uuid())
+  bomId            String
+  bom              BillOfMaterial @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  
+  rawMaterialId    String
+  rawMaterial      Product        @relation("BOMMaterial", fields: [rawMaterialId], references: [id], onDelete: Restrict)
+  quantityRequired Float          
+}
+
+model Invoice {
+  id             String       @id @default(uuid())
+  invoiceNumber  String       @unique
+  issueDate      DateTime
+  dueDate        DateTime?
+  status         String       @default("Draft") // Draft, Sent, Paid, Overdue, Void
+  
+  currency       String       @default("INR")
+  totalAmount    Float        @default(0.0)
+  amountPaid     Float        @default(0.0)
+  amountDue      Float        @default(0.0)
+  notes          String?
+
+  customerId     String
+  customer       Contact      @relation("CustomerInvoices", fields: [customerId], references: [id], onDelete: Restrict)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  items          InvoiceItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  description String?
+  quantity    Float
+  unitPrice   Float
+  discount    Float    @default(0.0)
+  taxRate     Float    @default(0.0)
+  total       Float
+
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Bill {
+  id             String       @id @default(uuid())
+  billNumber     String       @unique
+  issueDate      DateTime
+  dueDate        DateTime?
+  status         String       @default("Draft") // Draft, Received, Paid, Void
+  
+  currency       String       @default("INR")
+  totalAmount    Float        @default(0.0)
+  amountPaid     Float        @default(0.0)
+  amountDue      Float        @default(0.0)
+  notes          String?
+
+  supplierId     String
+  supplier       Contact      @relation("SupplierBills", fields: [supplierId], references: [id], onDelete: Restrict)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  items          BillItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BillItem {
+  id          String   @id @default(uuid())
+  description String?
+  quantity    Float
+  unitPrice   Float
+  taxRate     Float    @default(0.0)
+  total       Float
+
+  billId      String
+  bill        Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
