@@ -16,10 +16,7 @@ taskkill /F /IM node.exe > nul 2>&1
 :: Wait 2 seconds for processes to fully die
 timeout /t 2 /nobreak > nul
 
-:: Delete Next.js cache to fix EPERM file lock errors
-if exist "e:\accouding\frontend\.next" (
-    rmdir /s /q "e:\accouding\frontend\.next"
-)
+:: NOTE: Cache is preserved for faster startup. Only delete manually if you see EPERM errors.
 
 echo  ✓ Cleanup complete!
 echo.
@@ -39,9 +36,9 @@ start "YBG Frontend (Port 3000)" cmd /k "color 0E && echo [FRONTEND] Starting on
 echo  Launched Backend  (Port 4005)
 echo  Launched Frontend (Port 3000)
 echo.
-echo  [3/3] Waiting 30 seconds for servers to compile...
+echo  [3/3] Waiting 15 seconds for servers to start...
 echo.
-timeout /t 30 /nobreak > nul
+timeout /t 15 /nobreak > nul
 
 echo  Opening YBG ERP in Chrome...
 start chrome http://localhost:3000

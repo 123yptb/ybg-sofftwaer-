@@ -18,6 +18,7 @@ export default function YearEndMigrationPage() {
   const [trialBalance, setTrialBalance] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [orgId, setOrgId] = useState(null);
+  const [manualOverrides, setManualOverrides] = useState({});
 
   useEffect(() => {
     if (user) {
@@ -44,7 +45,7 @@ export default function YearEndMigrationPage() {
 
   const handleExecute = async () => {
     setIsExecuting(true);
-    const res = await migrateToNewYear(orgId);
+    const res = await migrateToNewYear(orgId, manualOverrides);
     
     if (res.success) {
       toast.success('Year-End Migration successful!');
@@ -178,7 +179,18 @@ export default function YearEndMigrationPage() {
                       <td className="px-8 py-4 text-white font-medium">{acc.name} <span className="text-muted text-xs ml-1">({acc.code})</span></td>
                       <td className="px-8 py-4 text-muted text-xs">{acc.type}</td>
                       <td className="px-8 py-4 text-right tabular-nums text-white/50">{formatCurrency(acc.balance)}</td>
-                      <td className="px-8 py-4 text-right tabular-nums font-bold text-emerald-400">{formatCurrency(acc.balance)}</td>
+                      <td className="px-8 py-4 text-right tabular-nums font-bold text-emerald-400">
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="text-muted/50 font-normal text-xs">$</span>
+                          <input 
+                            type="number"
+                            className="w-24 bg-transparent text-right border-b border-white/20 hover:border-white/40 focus:border-emerald-500 outline-none tabular-nums text-emerald-400 font-bold px-1"
+                            value={manualOverrides[acc.id] !== undefined ? manualOverrides[acc.id] : acc.balance}
+                            onChange={(e) => setManualOverrides(prev => ({...prev, [acc.id]: e.target.value === '' ? '' : parseFloat(e.target.value)}))}
+                            placeholder={acc.balance}
+                          />
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

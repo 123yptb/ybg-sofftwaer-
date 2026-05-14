@@ -54,7 +54,7 @@ export async function getTrialBalance(organizationId) {
  * 2. Updates Account.openingBalance = Account.balance.
  * 3. Marks active transactions/entries as isArchived.
  */
-export async function migrateToNewYear(organizationId) {
+export async function migrateToNewYear(organizationId, manualOverrides = {}) {
   if (!organizationId) {
     return { success: false, error: 'Organization ID is required.' };
   }
@@ -85,10 +85,14 @@ export async function migrateToNewYear(organizationId) {
 
       // Update opening balances
       for (const account of accounts) {
+        const newOpeningBalance = manualOverrides[account.id] !== undefined 
+          ? manualOverrides[account.id] 
+          : account.balance;
+
         await tx.account.update({
           where: { id: account.id },
           data: {
-            openingBalance: account.balance
+            openingBalance: newOpeningBalance
             // Note: In strict accounting, we would zero out Income/Expense here, 
             // but we follow user's instruction to set opening to current balance.
           }
